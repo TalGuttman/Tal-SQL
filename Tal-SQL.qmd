@@ -1,0 +1,111 @@
+---
+title: "Tal-SQL"
+format: html
+editor: visual
+---
+
+**Question 1**
+```{r}
+library(DBI)
+library(RSQLite)
+
+setwd("C://Users//talta//OneDrive//שולחן העבודה//quarto")
+
+con_chocolate <- DBI::dbConnect(drv = RSQLite::SQLite(),
+dbname = "chocolate.sqlite")
+
+```
+
+```{sql, connection = "con_chocolate", output.var = "answer1"}
+
+WITH total_orders AS (
+SELECT cid, SUM(Price * amount) AS sum_total
+FROM `orders`
+LEFT JOIN products USING (pid)
+WHERE (sale_date > '2023-01-01')
+GROUP BY cid
+)
+SELECT *
+FROM total_orders
+LEFT JOIN customers USING (cid)
+ORDER BY sum_total DESC
+LIMIT 1
+
+```
+
+The client wanted to know who is the customer who made the
+highest revenue for the company since January 1st, 2023. 
+
+This customer is Joshua Beieler from Michigan.
+
+
+**Question 2**
+
+```{sql, connection = "con_chocolate", output.var = "answer2"}
+
+WITH repsales AS (
+    SELECT
+        s.srid,
+        s.Name AS sales_rep_name,
+        s.year_joined,
+        COUNT(o.cid) AS total_sales,
+        SUM(o.amount) AS candy_bars_sold
+    FROM salesreps s
+    JOIN orders o ON s.srid = o.srid
+    GROUP BY s.srid
+),
+avg_year AS (
+    SELECT
+        year_joined,
+        AVG(total_sales) AS avg_sales
+    FROM repsales
+    GROUP BY year_joined
+),
+TopRep AS (
+    SELECT
+        rs.*,
+        ya.avg_sales
+    FROM repsales rs
+    INNER JOIN avg_year ya ON rs.year_joined = ya.year_joined
+    WHERE rs.total_sales > ya.avg_sales
+    ORDER BY rs.total_sales DESC
+    LIMIT 1
+),
+top_customer AS (
+    SELECT
+        c.Name AS customer_name,
+        SUM(o.amount) AS total_purchased
+    FROM customers c
+    JOIN orders o ON c.cid = o.cid
+    WHERE o.srid = (SELECT srid FROM TopRep)
+    GROUP BY c.cid
+    ORDER BY total_purchased DESC
+    LIMIT 1
+),
+top_candy AS (
+    SELECT
+        p.candy_names,
+        SUM(o.amount) AS total_sold
+    FROM products p
+    JOIN orders o ON p.pid = o.pid
+    WHERE o.srid = (SELECT srid FROM toprep)
+    GROUP BY p.pid
+    ORDER BY total_sold DESC
+    LIMIT 1
+)
+SELECT
+    tr.sales_rep_name,
+    tr.total_sales,
+    tc.customer_name,
+    tca.candy_names
+FROM toprep tr
+CROSS JOIN top_customer tc
+CROSS JOIN top_candy tca
+
+```
+
+The customer who has made the larger number of sales compared to the average of
+all sales reps that were recruited in the same year as him is Asmaa el-Saadeh with 181 sales.
+
+Asmaa el-Saadeh's top customer is Gerardo Sims,
+and the most sold candybar is Caramel Crunch.
